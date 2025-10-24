@@ -4,9 +4,17 @@
 FROM node:20-bullseye-slim AS builder
 WORKDIR /app
 ENV CI=true
-# Install all dependencies (including dev) in the builder so Next.js build has everything it needs
+# Speed up and stabilize npm in constrained/remote builders
+ENV NPM_CONFIG_AUDIT=false \
+  NPM_CONFIG_FUND=false \
+  NPM_CONFIG_LOGLEVEL=info \
+  NPM_CONFIG_REGISTRY=https://registry.npmjs.org \
+  npm_config_legacy_peer_deps=true
+# Install all dependencies (including dev) in the builder so Next.js build has everything it needs, with fallback
 COPY package*.json ./
-RUN npm ci
+RUN set -eux; \
+  npm ci --legacy-peer-deps || npm install --legacy-peer-deps; \
+  npm cache clean --force
 
 # Copy source and generate Prisma client
 COPY . .
