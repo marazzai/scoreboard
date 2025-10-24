@@ -39,7 +39,8 @@ export default function DisplayScoreboardPage() {
   const [audioSrc, setAudioSrc] = useState<string>('/sounds/siren.mp3')
   const [audioAltHeadStatus, setAudioAltHeadStatus] = useState<number | string | null>(null)
 
-  // removed: sirenEveryMinute state
+  // keep sirenEveryMinute for compatibility with admin commands
+  const [sirenEveryMinute, setSirenEveryMinute] = useState<boolean>(false)
 
   useEffect(() => {
     // connect to socket.io on mount
