@@ -23,8 +23,6 @@ ENV NODE_ENV=production
 # Install only production deps (copy lockfile to preserve versions)
 COPY package*.json ./
 RUN npm ci --omit=dev
-# Ensure Prisma client is generated in the final image
-RUN npx prisma generate
 
 # Copy built app and required runtime files
 COPY --from=builder /app/.next ./.next
