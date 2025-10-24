@@ -1,0 +1,17 @@
+version: "3.9"
+
+services:
+  palaapp:
+    image: ghcr.io/marazzai/scoreboard:latest
+    container_name: palaapp
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: "file:/app/var/db/dev.db"
+      NEXT_TELEMETRY_DISABLED: "1"
+      # Configure OBS connection as needed
+      OBS_HOST: "192.168.1.120"
+      OBS_PORT: "4455"
+      OBS_PASSWORD: "123456"
+    restart: unless-stopped
