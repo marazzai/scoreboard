@@ -2,16 +2,16 @@ version: "3.9"
 
 services:
   palaapp:
-    image: ghcr.io/OWNER/REPO:latest # Sostituisci OWNER/REPO con il tuo GitHub org/utente e nome repo
+    image: https://github.com/marazzai/scoreboard.git # Sostituisci OWNER/REPO con il tuo GitHub org/utente e nome repo
     container_name: palaapp
     ports:
       - "3000:3000"
     environment:
       NODE_ENV: production
       DATABASE_URL: "file:./dev.db"
-      OBS_HOST: "localhost" # Cambia con IP della macchina con OBS
+      OBS_HOST: "192.168.1.120" # Cambia con IP della macchina con OBS
       OBS_PORT: "4455"
-      OBS_PASSWORD: ""
+      OBS_PASSWORD: "123456"
       NEXT_TELEMETRY_DISABLED: "1"
     volumes:
       - ./data:/app/data
