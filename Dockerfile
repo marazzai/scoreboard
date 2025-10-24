@@ -44,6 +44,7 @@ COPY --from=builder /app/prisma ./prisma
 # Copy generated Prisma client and runtime from builder to runner so @prisma/client is available
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder /app/dev.db ./dev.db
 COPY --from=builder /app/data ./data
 
 # Expose the web port
