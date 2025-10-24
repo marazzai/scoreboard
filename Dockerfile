@@ -18,16 +18,16 @@ ENV NODE_OPTIONS=--max_old_space_size=8192
 # Build Next.js (stable builder)
 RUN npm run build
 
+# Prepare production node_modules to reuse in runner
+RUN npm prune --omit=dev
+
 FROM node:20-bullseye-slim AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 # Default runtime DATABASE_URL (can be overridden by compose env). Keep DB inside container
 ENV DATABASE_URL="file:/app/var/db/dev.db"
-# Install only production deps in the runner
-COPY package*.json ./
-RUN npm ci --omit=dev
-# Ensure prisma CLI is available; generation and db push will run at container startup
-RUN npx prisma generate || true
+# Reuse production dependencies from builder (faster, avoids npm ci issues in some hosts)
+COPY --from=builder /app/node_modules ./node_modules
 
 # Copy built app and required runtime files
 COPY --from=builder /app/.next ./.next
