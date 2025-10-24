@@ -1,28 +1,27 @@
 # Multi-stage build for Next.js + custom Node server
 # Use Debian-based images to avoid Prisma/Alpine openssl issues
 
-FROM node:20-bullseye-slim AS deps
-WORKDIR /app
-ENV CI=true
-COPY package*.json ./
-RUN npm ci
-
 FROM node:20-bullseye-slim AS builder
 WORKDIR /app
 ENV CI=true
-COPY --from=deps /app/node_modules ./node_modules
+# Install all dependencies (including dev) in the builder so Next.js build has everything it needs
+COPY package*.json ./
+RUN npm ci
+
+# Copy source and generate Prisma client
 COPY . .
-# Generate Prisma client (sqlite)
 RUN npx prisma generate
+
 # Increase Node's memory limit during build to avoid OOM failures on small hosts
-ENV NODE_OPTIONS=--max_old_space_size=4096
-# Build Next.js
+ENV NODE_OPTIONS=--max_old_space_size=8192
+
+# Build Next.js (stable builder)
 RUN npm run build
 
 FROM node:20-bullseye-slim AS runner
 WORKDIR /app
 ENV NODE_ENV=production
-# Install only production deps (copy lockfile to preserve versions)
+# Install only production deps in the runner
 COPY package*.json ./
 RUN npm ci --omit=dev
 
