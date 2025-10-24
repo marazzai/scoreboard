@@ -2,7 +2,7 @@ version: "3.9"
 
 services:
   palaapp:
-    image: https://github.com/marazzai/scoreboard.git # Sostituisci OWNER/REPO con il tuo GitHub org/utente e nome repo
+    image: ghcr.io/marazzai/scoreboard:latest
     container_name: palaapp
     ports:
       - "3000:3000"
