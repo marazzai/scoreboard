@@ -30,6 +30,9 @@ ENV DATABASE_URL="file:./dev.db"
 # Install only production deps in the runner
 COPY package*.json ./
 RUN npm ci --omit=dev
+# Ensure prisma CLI is available and push DB schema into runtime DB file
+RUN npx prisma generate || true
+RUN npx prisma db push
 
 # Copy built app and required runtime files
 COPY --from=builder /app/.next ./.next
