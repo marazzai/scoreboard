@@ -48,6 +48,9 @@ else
 
 	echo "[entrypoint] Pushing Prisma schema to database (db push)..."
 	npx prisma db push --schema="$SCHEMA_PATH" || true
+
+	echo "[entrypoint] Seeding database (if configured)..."
+	npx prisma db seed --schema="$SCHEMA_PATH" || true
 fi
 
 echo "[entrypoint] Starting server"
