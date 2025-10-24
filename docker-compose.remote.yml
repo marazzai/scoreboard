@@ -15,13 +15,11 @@ services:
       - "3000:3000"
     environment:
       NODE_ENV: production
-      # Persist DB inside ./data on the host so it survives container recreates
-      DATABASE_URL: "file:./data/dev.db"
+      # Keep DB inside container at a stable absolute path
+      DATABASE_URL: "file:/app/var/db/dev.db"
       OBS_HOST: "192.168.1.120" # Cambia con IP della macchina con OBS
       OBS_PORT: "4455"
       OBS_PASSWORD: "123456"
       NEXT_TELEMETRY_DISABLED: "1"
-    volumes:
-      - ./data:/app/data
-      - ./prisma:/app/prisma
+    # No bind mounts for prisma or data to avoid schema masking and permission issues
     restart: unless-stopped
