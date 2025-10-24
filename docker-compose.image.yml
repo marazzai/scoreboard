@@ -2,7 +2,12 @@ version: "3.9"
 
 services:
   palaapp:
-    image: ghcr.io/marazzai/scoreboard:main
+    # Build from this repo automatically to avoid GHCR pull issues
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: palaapp:latest
+    pull_policy: build
     container_name: palaapp
     ports:
       - "3000:3000"
