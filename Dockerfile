@@ -10,7 +10,11 @@ RUN npm ci
 
 # Copy source and generate Prisma client
 COPY . .
+# Ensure DATABASE_URL points to a local SQLite file during build so we can create the schema
+ENV DATABASE_URL="file:./dev.db"
 RUN npx prisma generate
+# Create the SQLite database and push the schema so runtime has tables available
+RUN npx prisma db push
 
 # Increase Node's memory limit during build to avoid OOM failures on small hosts
 ENV NODE_OPTIONS=--max_old_space_size=8192
@@ -21,6 +25,8 @@ RUN npm run build
 FROM node:20-bullseye-slim AS runner
 WORKDIR /app
 ENV NODE_ENV=production
+# Default runtime DATABASE_URL (can be overridden by compose env)
+ENV DATABASE_URL="file:./dev.db"
 # Install only production deps in the runner
 COPY package*.json ./
 RUN npm ci --omit=dev
