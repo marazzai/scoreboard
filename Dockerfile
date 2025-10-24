@@ -43,6 +43,8 @@ COPY --from=builder /app/src ./src
 COPY --from=builder /app/app ./app
 COPY --from=builder /app/components ./components
 COPY --from=builder /app/prisma ./prisma
+# Also copy schema to project root so prisma CLI can find it via default paths
+COPY --from=builder /app/prisma/schema.prisma ./schema.prisma
 # Copy generated Prisma client and runtime from builder to runner so @prisma/client is available
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
