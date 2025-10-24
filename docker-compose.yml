@@ -1,0 +1,27 @@
+version: "3.9"
+
+services:
+  palaapp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: palaapp:latest
+    container_name: palaapp
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      # Prisma (SQLite) database file path (relative to /app/prisma)
+      DATABASE_URL: "file:./dev.db"
+      # OBS defaults (override with your NAS LAN IP/host of OBS machine)
+      OBS_HOST: "localhost"
+      OBS_PORT: "4455"
+      OBS_PASSWORD: ""
+      # Optional: disable Next telemetry
+      NEXT_TELEMETRY_DISABLED: "1"
+    volumes:
+      # Persist OBS mapping JSON and any runtime data
+      - ./data:/app/data
+      # Persist Prisma SQLite DB
+      - ./prisma:/app/prisma
+    restart: unless-stopped

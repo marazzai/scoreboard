@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tabellone Hockey - Stile Classico</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Teko:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --color-red: #FF4136;
+            --color-yellow: #FFD700;
+            --color-bg: #000000;
+            --color-text-header: #FFFFFF;
+        }
+        html,body { height: 100%; margin: 0; }
+        body {
+            background-color: var(--color-bg);
+            display: grid;
+            place-items: center;
+            overflow: hidden;
+            font-family: 'Teko', sans-serif;
+        }
+        .output-viewport {
+            width: 1920px;
+            height: 1080px;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+            .scoreboard-container {
+                width: 1920px;
+                height: 1080px;
+                background-color: #080808;
+                border: 4px solid #333;
+                border-radius: 10px;
+                padding: 0;
+                box-sizing: border-box;
+                display: grid;
+                grid-template-columns: 520px 792px 520px;
+                grid-template-rows: 288px 448px 288px;
+                column-gap: 40px;
+                row-gap: 24px;
+                grid-template-areas:
+                    "header-home header-clock header-guest"
+                    "score-home info-period score-guest"
+                    "penalties-home info-bottom penalties-guest";
+            }
+                .digit-font { font-weight:700; text-align:center; line-height:1; }
+                .grid-cell { display:grid; place-items:center; overflow:hidden; }
+                .header-text { font-size: 96px; color: var(--color-text-header); text-transform: uppercase; margin:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+            #main-clock { font-size: 168px; color: var(--color-red); }
+            .score { font-size: 280px; color: var(--color-yellow); }
+            #period-display { font-size: 120px; color: var(--color-yellow); }
+            .period-label { font-size: 64px; color: var(--color-text-header); }
+            .penalties-section { display:grid; width:100%; height:100%; grid-template-columns:1fr 1fr; grid-template-rows:56px 1fr 1fr; gap:20px; }
+            .penalty-header { font-size: 40px; color: var(--color-text-header); text-align:center; }
+            .penalty-player, .penalty-time { font-size: 96px; line-height:1; }
+            .penalty-player { color: var(--color-red); }
+            .penalty-time { color: var(--color-yellow); }
+    </style>
+</head>
+<body>
+    <div class="output-viewport">
+        <div class="scoreboard-container" id="scoreboard-root">
+            <div class="header-home grid-cell"><h2 class="header-text" id="team-home">HOME</h2></div>
+            <div class="header-clock grid-cell digit-font" id="main-clock">20:00</div>
+            <div class="header-guest grid-cell"><h2 class="header-text" id="team-guest">GUEST</h2></div>
+
+            <div class="score-home grid-cell digit-font score" id="home-score">0</div>
+            <div class="info-period grid-cell"><div><div class="period-label">PER</div><div class="digit-font" id="period-display">1</div></div></div>
+            <div class="score-guest grid-cell digit-font score" id="guest-score">0</div>
+
+            <div class="penalties-home penalties-section">
+                <div class="penalty-header">PLYR</div>
+                <div class="penalty-header">PENALTY</div>
+                <div class="penalty-player grid-cell digit-font" id="home-penalty-plyr-1">--</div>
+                <div class="penalty-time grid-cell digit-font" id="home-penalty-time-1">--:--</div>
+                <div class="penalty-player grid-cell digit-font" id="home-penalty-plyr-2">--</div>
+                <div class="penalty-time grid-cell digit-font" id="home-penalty-time-2">--:--</div>
+            </div>
+
+            <div class="info-bottom"></div>
+
+            <div class="penalties-guest penalties-section">
+                <div class="penalty-header">PLYR</div>
+                <div class="penalty-header">PENALTY</div>
+                <div class="penalty-player grid-cell digit-font" id="guest-penalty-plyr-1">--</div>
+                <div class="penalty-time grid-cell digit-font" id="guest-penalty-time-1">--:--</div>
+                <div class="penalty-player grid-cell digit-font" id="guest-penalty-plyr-2">--</div>
+                <div class="penalty-time grid-cell digit-font" id="guest-penalty-time-2">--:--</div>
+            </div>
+            <button id="unlock-audio-btn" style="position:absolute;top:12px;right:12px;background:rgba(17,24,39,0.8);color:#fff;border:1px solid #334155;border-radius:8px;padding:8px 12px;z-index:40">Attiva Audio</button>
+        </div>
+    </div>
+
+    <audio id="siren-audio" src="/sounds/siren.mp3" preload="auto" playsinline></audio>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        (function(){
+            const socket = io();
+            socket.on('connect', () => { socket.emit('join','displays'); });
+
+            const state = {
+                homeScore: 0,
+                guestScore: 0,
+                period: 1,
+                timeSeconds: 20*60,
+                timerRunning: false,
+                homePenalties: [ {player:'--', remaining: null}, {player:'--', remaining:null} ],
+                guestPenalties: [ {player:'--', remaining: null}, {player:'--', remaining:null} ],
+                teamHome: 'HOME',
+                teamGuest: 'GUEST',
+                sirenEveryMinute: false
+            };
+
+            const els = {
+                homeScore: document.getElementById('home-score'),
+                guestScore: document.getElementById('guest-score'),
+                period: document.getElementById('period-display'),
+                clock: document.getElementById('main-clock'),
+                teamHome: document.getElementById('team-home'),
+                teamGuest: document.getElementById('team-guest'),
+                hply1: document.getElementById('home-penalty-plyr-1'),
+                htim1: document.getElementById('home-penalty-time-1'),
+                hply2: document.getElementById('home-penalty-plyr-2'),
+                htim2: document.getElementById('home-penalty-time-2'),
+                gply1: document.getElementById('guest-penalty-plyr-1'),
+                gtim1: document.getElementById('guest-penalty-time-1'),
+                gply2: document.getElementById('guest-penalty-plyr-2'),
+                gtim2: document.getElementById('guest-penalty-time-2'),
+                sirenAudio: document.getElementById('siren-audio')
+            };
+
+            function render() {
+                els.homeScore.textContent = String(state.homeScore);
+                els.guestScore.textContent = String(state.guestScore);
+                els.period.textContent = String(state.period);
+                const m = Math.floor(state.timeSeconds/60); const s = state.timeSeconds%60;
+                els.clock.textContent = `${m}:${s<10? '0'+s : s}`;
+                els.teamHome.textContent = state.teamHome;
+                els.teamGuest.textContent = state.teamGuest;
+                // penalties
+                els.hply1.textContent = state.homePenalties[0].player || '--';
+                els.htim1.textContent = fmt(state.homePenalties[0].remaining);
+                els.hply2.textContent = state.homePenalties[1].player || '--';
+                els.htim2.textContent = fmt(state.homePenalties[1].remaining);
+                els.gply1.textContent = state.guestPenalties[0].player || '--';
+                els.gtim1.textContent = fmt(state.guestPenalties[0].remaining);
+                els.gply2.textContent = state.guestPenalties[1].player || '--';
+                els.gtim2.textContent = fmt(state.guestPenalties[1].remaining);
+            }
+
+            function fmt(sec){ if (sec==null) return '--:--'; const m = Math.floor(sec/60); const s = sec%60; return `${m}${s<10?':0':''}${s}` }
+
+            // tick penalties only when timer is running; timeSeconds is driven by admin updates
+            setInterval(() => {
+                if (!state.timerRunning) return;
+                for (let i=0;i<2;i++){
+                    if (state.homePenalties[i].remaining != null) {
+                        state.homePenalties[i].remaining = Math.max(0, state.homePenalties[i].remaining-1);
+                        if (state.homePenalties[i].remaining === 0) state.homePenalties[i].remaining = null, state.homePenalties[i].player='--';
+                    }
+                    if (state.guestPenalties[i].remaining != null) {
+                        state.guestPenalties[i].remaining = Math.max(0, state.guestPenalties[i].remaining-1);
+                        if (state.guestPenalties[i].remaining === 0) state.guestPenalties[i].remaining = null, state.guestPenalties[i].player='--';
+                    }
+                }
+                render();
+            }, 1000);
+
+            let needUnlock = false;
+            function playSiren(){ try{ els.sirenAudio.currentTime=0; const p = els.sirenAudio.play(); if (p && p.catch) p.catch(()=>{ needUnlock=true; showUnlock(); }); }catch(e){ needUnlock=true; showUnlock(); } }
+
+            function showUnlock(){
+                let ov = document.getElementById('unlock-audio');
+                if (!ov){
+                    ov = document.createElement('button');
+                    ov.id='unlock-audio';
+                    ov.textContent = "Tocca per abilitare l'audio";
+                    ov.style.position='fixed'; ov.style.inset='0'; ov.style.background='rgba(0,0,0,0.6)'; ov.style.color='#fff'; ov.style.display='grid'; ov.style.placeItems='center'; ov.style.fontSize='24px'; ov.style.zIndex='50';
+                    ov.addEventListener('click', async () => {
+                        try {
+                            els.sirenAudio.muted = true; await els.sirenAudio.play(); els.sirenAudio.pause(); els.sirenAudio.muted = false; needUnlock=false; ov?.remove();
+                        } catch {}
+                    });
+                    document.body.appendChild(ov);
+                }
+            }
+
+            // manual unlock button (useful in OBS/desktop)
+            const unlockBtn = document.getElementById('unlock-audio-btn');
+            if (unlockBtn){
+                unlockBtn.addEventListener('click', async () => {
+                    try { els.sirenAudio.muted = true; await els.sirenAudio.play(); els.sirenAudio.pause(); els.sirenAudio.muted = false; unlockBtn.style.display='none'; } catch { showUnlock(); }
+                });
+            }
+
+            function assignPenalty(team, player, duration){
+                const slots = team === 'home' ? state.homePenalties : state.guestPenalties;
+                for (let i=0;i<2;i++){
+                    if (slots[i].remaining == null) { slots[i].player = player; slots[i].remaining = duration; return; }
+                }
+            }
+
+                        socket.on('scoreboard:update', (d) => {
+                                if (d && typeof d==='object'){
+                                    if (typeof d.homeGoals==='number') state.homeScore = d.homeGoals;
+                                    if (typeof d.awayGoals==='number') state.guestScore = d.awayGoals;
+                                    if (typeof d.period==='number') state.period = d.period;
+                                    if (typeof d.timeSeconds==='number') {
+                                        const prev = state.timeSeconds;
+                                        state.timeSeconds = d.timeSeconds;
+                                        if (state.sirenEveryMinute && state.timeSeconds%60===0 && state.timeSeconds!==prev) playSiren();
+                                    }
+                                                        if (typeof d.timerRunning==='boolean') state.timerRunning = !!d.timerRunning;
+                                                        if (typeof d.teamHome==='string') state.teamHome = d.teamHome;
+                                                        if (typeof d.teamGuest==='string') state.teamGuest = d.teamGuest;
+                                                        if (typeof d.sirenEveryMinute==='boolean') state.sirenEveryMinute = !!d.sirenEveryMinute;
+                                    if (Array.isArray(d.homePenalties)) {
+                                        state.homePenalties = d.homePenalties.map((x)=>({ player: String(x?.player || '--'), remaining: (typeof x?.remaining==='number'? x.remaining : null) }));
+                                    }
+                                    if (Array.isArray(d.guestPenalties)) {
+                                        state.guestPenalties = d.guestPenalties.map((x)=>({ player: String(x?.player || '--'), remaining: (typeof x?.remaining==='number'? x.remaining : null) }));
+                                    }
+                                }
+                                render();
+                        });
+
+            socket.on('scoreboard:cmd', (m) => {
+                const cmd = m?.cmd; const p = m?.payload;
+                switch(cmd){
+                    case 'reset': state.homeScore=0; state.guestScore=0; state.period=1; state.timeSeconds=20*60; state.homePenalties=[{player:'--',remaining:null},{player:'--',remaining:null}]; state.guestPenalties=[{player:'--',remaining:null},{player:'--',remaining:null}]; break;
+                    case 'siren': playSiren(); break;
+                    case 'setClock': if (p && typeof p.secs==='number') state.timeSeconds = p.secs; break;
+                    case 'setPeriod': if (p && (typeof p.period==='number' || typeof p.period==='string')) state.period = Number(p.period); break;
+                    case 'assignPenalty': if (p && p.team && p.player) assignPenalty(p.team, String(p.player), Number(p.durationSec || p.duration || 120)); break;
+                    case 'clearPenalty': if (p && p.team && typeof p.slot==='number'){
+                        if (p.team==='home') state.homePenalties[p.slot-1]={player:'--',remaining:null}; else state.guestPenalties[p.slot-1]={player:'--',remaining:null};
+                        break;
+                    }
+                    case 'setNames': if (p){ if (typeof p.home==='string') state.teamHome = p.home; if (typeof p.guest==='string') state.teamGuest = p.guest; } break;
+                    case 'sirenEveryMinute': if (p && typeof p.enabled==='boolean') state.sirenEveryMinute = Boolean(p.enabled); break;
+                }
+                render();
+            });
+
+            // initial render
+            render();
+        })();
+    </script>
+</body>
+</html>

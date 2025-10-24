@@ -1,0 +1,167 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Role {
+  id          Int          @id @default(autoincrement())
+  name        String       @unique
+  users       User[]
+  rolePermissions RolePermission[]
+}
+
+model Permission {
+  id    Int    @id @default(autoincrement())
+  name  String @unique
+  rolePermissions RolePermission[]
+}
+
+// Join table for many-to-many Role <-> Permission
+model RolePermission {
+  roleId       Int
+  permissionId Int
+
+  role       Role       @relation(fields: [roleId], references: [id])
+  permission Permission @relation(fields: [permissionId], references: [id])
+
+  @@id([roleId, permissionId])
+}
+
+model User {
+  // Auth.js / NextAuth user model
+  id             String    @id @default(cuid())
+  name           String?
+  email          String?   @unique
+  emailVerified  DateTime?
+  image          String?
+
+  // Local auth
+  username       String?   @unique
+  password_hash  String?
+
+  // Role relation (app-specific)
+  roleId         Int?
+  role           Role?     @relation(fields: [roleId], references: [id])
+
+  // NextAuth relations
+  accounts       Account[]
+  sessions       Session[]
+  // Tickets relations
+  ticketsAuthored Ticket[] @relation("TicketAuthor")
+  ticketsAssigned Ticket[] @relation("TicketAssignee")
+  // To-do and checklists
+  todoItems      TodoItem[]
+  checkLists     CheckList[]
+}
+
+model Account {
+  id                 String  @id @default(cuid())
+  userId             String
+  type               String
+  provider           String
+  providerAccountId  String
+  refresh_token      String?
+  access_token       String?
+  expires_at         Int?
+  token_type         String?
+  scope              String?
+  id_token           String?
+  session_state      String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+enum TicketStatus {
+  APERTO
+  IN_CORSO
+  CHIUSO
+}
+
+enum TicketPriority {
+  BASSA
+  MEDIA
+  ALTA
+}
+
+model Ticket {
+  id          Int            @id @default(autoincrement())
+  title       String
+  description String?
+  status      TicketStatus   @default(APERTO)
+  priority    TicketPriority @default(MEDIA)
+  authorId    String
+  assignedToId String?
+
+  author     User @relation("TicketAuthor", fields: [authorId], references: [id])
+  assignedTo User? @relation("TicketAssignee", fields: [assignedToId], references: [id])
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model TodoItem {
+  id         Int      @id @default(autoincrement())
+  title      String
+  completed  Boolean  @default(false)
+  userId     String
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model CheckList {
+  id         Int      @id @default(autoincrement())
+  title      String
+  content    String   // Markdown content
+  authorId   String
+
+  author     User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+// OBS settings stored by the app (single row expected)
+model ObsSetting {
+  id        Int     @id @default(autoincrement())
+  host      String  @default("localhost")
+  port      Int     @default(4455)
+  password  String?
+
+  updatedAt DateTime @updatedAt
+}
+
+model ScheduledEvent {
+  id        Int      @id @default(autoincrement())
+  uid       String   @unique
+  summary   String
+  start     DateTime
+  fired     Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
