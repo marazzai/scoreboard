@@ -2,7 +2,7 @@ version: "3.9"
 
 services:
   palaapp:
-    image: ghcr.io/marazzai/scoreboard:latest
+    image: ${IMAGE:-ghcr.io/marazzai/scoreboard:latest}
     container_name: palaapp
     ports:
       - "3000:3000"
