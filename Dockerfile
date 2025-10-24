@@ -14,7 +14,9 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 # Generate Prisma client (sqlite)
 RUN npx prisma generate
-# Build Next.js (Turbopack by default)
+# Increase Node's memory limit during build to avoid OOM failures on small hosts
+ENV NODE_OPTIONS=--max_old_space_size=4096
+# Build Next.js
 RUN npm run build
 
 FROM node:20-bullseye-slim AS runner
