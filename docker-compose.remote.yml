@@ -2,7 +2,14 @@ version: "3.9"
 
 services:
   palaapp:
-    image: ghcr.io/marazzai/scoreboard:main
+    # Build the image locally on the host (Portainer will build from the repo)
+    build:
+      context: .
+      dockerfile: Dockerfile
+    # use a local image name so Portainer doesn't try to pull from GHCR
+    image: palaapp:latest
+    # ensure compose rebuilds the image from source instead of pulling
+    pull_policy: build
     container_name: palaapp
     ports:
       - "3000:3000"
