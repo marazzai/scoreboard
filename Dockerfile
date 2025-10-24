@@ -30,9 +30,8 @@ ENV DATABASE_URL="file:./dev.db"
 # Install only production deps in the runner
 COPY package*.json ./
 RUN npm ci --omit=dev
-# Ensure prisma CLI is available and push DB schema into runtime DB file
+# Ensure prisma CLI is available; generation and db push will run at container startup
 RUN npx prisma generate || true
-RUN npx prisma db push
 
 # Copy built app and required runtime files
 COPY --from=builder /app/.next ./.next
@@ -56,5 +55,9 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD node -e "require('http').get('http://localhost:3000', r=>{process.exit(r.statusCode===200?0:1)}).on('error',()=>process.exit(1))"
 
-# Start the custom server (binds 0.0.0.0 inside)
-CMD ["node", "server.js"]
+# Copy entrypoint script and make it executable
+COPY ./scripts/entrypoint.sh ./scripts/entrypoint.sh
+RUN chmod +x ./scripts/entrypoint.sh
+
+# Use entrypoint to ensure DB is initialized then start the server
+ENTRYPOINT ["/bin/sh", "./scripts/entrypoint.sh"]
