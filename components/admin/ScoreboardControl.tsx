@@ -46,32 +46,7 @@ export default function ScoreboardControl() {
     };
   }, []);
 
-  useEffect(() => {
-    if (state.timerRunning) {
-      timerRef.current = window.setInterval(() => {
-        setState(prev => {
-          const nextSeconds = Math.max(0, prev.timeSeconds - 1);
-          const next = { ...prev, timeSeconds: nextSeconds };
-          socket.emit('scoreboard:update', next);
-          // auto-stop when reaches 0
-          if (nextSeconds === 0) {
-            clearInterval(timerRef.current!);
-            timerRef.current = null;
-            const stopped = { ...next, timerRunning: false };
-            setState(stopped);
-            socket.emit('scoreboard:update', stopped);
-          }
-          return next;
-        });
-      }, 1000);
-    } else {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
-    }
-    return () => { if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; } };
-  }, [state.timerRunning]);
+  // Clock is now server-authoritative; do not tick locally. Just emit start/stop.
 
   function emitState(next: ScoreState) {
     socket.emit('scoreboard:update', next);
@@ -144,9 +119,43 @@ export default function ScoreboardControl() {
 
   // show toast UI
 
+  // Fetch current state on mount for persistence across reloads
+  useEffect(() => {
+    fetch('/api/scoreboard/state').then(r => r.json()).then((data: any) => {
+      if (data && typeof data === 'object') {
+        setState((prev) => ({ ...prev, ...data }));
+        if (typeof data.teamHome === 'string') setHomeName(String(data.teamHome));
+        if (typeof data.teamGuest === 'string') setGuestName(String(data.teamGuest));
+        if (typeof data.sirenEveryMinute === 'boolean') setSirenEveryMinute(Boolean(data.sirenEveryMinute));
+      }
+    }).catch(() => {});
+  }, []);
+
+  // Keep local inputs in sync when updates arrive from other admins
+  useEffect(() => {
+    const onUpdate = (data: ScoreState) => {
+      setState(data);
+      setHomeName(data.teamHome);
+      setGuestName(data.teamGuest);
+      setSirenEveryMinute(Boolean(data.sirenEveryMinute));
+    };
+    socket.on('scoreboard:update', onUpdate);
+    return () => { socket.off('scoreboard:update', onUpdate); };
+  }, []);
+
   return (
     <div className="space-y-4 p-6 relative">
       <div title={connected ? 'Online' : 'Offline'} className={`absolute top-2 left-2 w-3 h-3 rounded-full ${connected ? 'bg-green-500' : 'bg-red-500'}`}></div>
+      {/* Compact operator summary */}
+      <div className="mb-2 p-2 border rounded bg-gray-50 text-sm flex flex-wrap items-center gap-4">
+        <div><span className="font-semibold">{state.teamHome}</span> {state.homeGoals}</div>
+        <div className="opacity-50">vs</div>
+        <div><span className="font-semibold">{state.teamGuest}</span> {state.awayGoals}</div>
+        <div>PER: <span className="font-semibold">{state.period}</span></div>
+        <div>TIME: <span className="font-mono">{Math.floor(state.timeSeconds/60)}:{String(state.timeSeconds%60).padStart(2, '0')}</span></div>
+        <div>Timer: <span className={state.timerRunning ? 'text-green-600' : 'text-red-600'}>{state.timerRunning ? 'RUN' : 'STOP'}</span></div>
+      </div>
+
       <div className="flex flex-wrap gap-3">
         <Button variant="primary" onClick={toggleTimer}>{state.timerRunning ? 'STOP OROLOGIO' : 'START OROLOGIO'}</Button>
   <ConfirmButton onConfirm={playSiren}>SIRENA MANUALE</ConfirmButton>

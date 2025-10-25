@@ -28,6 +28,17 @@ async function main() {
 
   if (io) {
     const sb = require('./src/lib/scoreboardState.js')
+    // Server-authoritative clock tick to keep all admins/displays in sync
+    setInterval(() => {
+      try {
+        const cur = sb.getScoreboardState()
+        if (!cur.timerRunning) return
+        const nextSec = Math.max(0, Number(cur.timeSeconds || 0) - 1)
+        const next = { ...cur, timeSeconds: nextSec, timerRunning: nextSec === 0 ? false : cur.timerRunning }
+        sb.setScoreboardState(next)
+        io.emit('scoreboard:update', next)
+      } catch {}
+    }, 1000)
     io.on('connection', (socket) => {
       socket.on('join', (room) => {
         if (typeof room === 'string') socket.join(room)
@@ -95,9 +106,9 @@ async function main() {
           }
         } catch {}
       })
-      // Forward admin state updates to displays (single source of truth)
+      // Forward state updates to ALL clients (admins + displays) and persist snapshot
       socket.on('scoreboard:update', (payload) => {
-        try { io.to('displays').emit('scoreboard:update', payload) } catch {}
+        try { io.emit('scoreboard:update', payload) } catch {}
         // Update server-side snapshot
         try {
           if (payload && typeof payload === 'object') sb.setScoreboardState(payload)
