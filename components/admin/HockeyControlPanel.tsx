@@ -31,12 +31,12 @@ export default function HockeyControlPanel() {
   const [homePenalties, setHomePenalties] = useState<PenaltySlot[]>([]);
   const [guestPenalties, setGuestPenalties] = useState<PenaltySlot[]>([]);
 
-  const timerRef = useRef<number | null>(null);
   const socketRef = useRef<ReturnType<typeof io> | null>(null);
   const [pendingObsAction, setPendingObsAction] = useState<null | 'show' | 'hide'>(null);
   const pendingTimerRef = useRef<number | null>(null);
   const [pendingAction, setPendingAction] = useState<null | 'load-time' | 'load-interval' | 'period-plus' | 'reset-game'>(null);
   const confirmTimerRef = useRef<number | null>(null);
+  const [obsConnected, setObsConnected] = useState(false);
 
   const timePresets = useMemo(() => [
     { label: "2:00", value: "2:00" },
@@ -44,7 +44,7 @@ export default function HockeyControlPanel() {
     { label: "1:30", value: "1:30" },
   ], []);
 
-  // socket + initial state
+  // socket + initial state + server updates
   useEffect(() => {
     const socket = io();
     socketRef.current = socket;
@@ -52,6 +52,23 @@ export default function HockeyControlPanel() {
     const onDisconnect = () => setConnected(false);
     socket.on("connect", onConnect);
     socket.on("disconnect", onDisconnect);
+    const onUpdate = (s: any) => {
+      if (typeof s.timeSeconds === 'number') setTimeSeconds(s.timeSeconds);
+      if (typeof s.timerRunning === 'boolean') setRunning(!!s.timerRunning);
+      if (typeof s.period === 'number') setPeriod(s.period);
+      if (typeof s.teamHome === 'string') setHomeName(s.teamHome);
+      if (typeof s.teamGuest === 'string') setGuestName(s.teamGuest);
+      if (typeof s.homeGoals === 'number') setHomeScore(s.homeGoals);
+      if (typeof s.awayGoals === 'number') setGuestScore(s.awayGoals);
+      // map two-slot model into our list UI
+      const hp = Array.isArray(s.homePenalties) ? s.homePenalties : [];
+      const gp = Array.isArray(s.guestPenalties) ? s.guestPenalties : [];
+      setHomePenalties(hp.filter((x: any) => typeof x?.remaining === 'number' && x.remaining > 0)
+        .map((x: any) => ({ id: Date.now() + Math.random(), player: String(x?.player ?? '--'), remainingSec: x.remaining })));
+      setGuestPenalties(gp.filter((x: any) => typeof x?.remaining === 'number' && x.remaining > 0)
+        .map((x: any) => ({ id: Date.now() + Math.random(), player: String(x?.player ?? '--'), remainingSec: x.remaining })));
+    };
+    socket.on('scoreboard:update', onUpdate);
 
     // hydrate from server snapshot
     (async () => {
@@ -59,20 +76,7 @@ export default function HockeyControlPanel() {
         const r = await fetch("/api/scoreboard/state");
         if (r.ok) {
           const s = await r.json();
-          if (typeof s.timeSeconds === 'number') setTimeSeconds(s.timeSeconds);
-          if (typeof s.timerRunning === 'boolean') setRunning(!!s.timerRunning);
-          if (typeof s.period === 'number') setPeriod(s.period);
-          if (typeof s.teamHome === 'string') setHomeName(s.teamHome);
-          if (typeof s.teamGuest === 'string') setGuestName(s.teamGuest);
-          if (typeof s.homeGoals === 'number') setHomeScore(s.homeGoals);
-          if (typeof s.awayGoals === 'number') setGuestScore(s.awayGoals);
-          // penalties snapshot (optional)
-          if (Array.isArray(s.homePenalties)) setHomePenalties(s.homePenalties
-            .map((x: any) => ({ id: Date.now() + Math.random(), player: String(x?.player ?? '--'), remainingSec: typeof x?.remaining === 'number' ? x.remaining : 0 }))
-            .filter((p: PenaltySlot) => p.remainingSec > 0));
-          if (Array.isArray(s.guestPenalties)) setGuestPenalties(s.guestPenalties
-            .map((x: any) => ({ id: Date.now() + Math.random(), player: String(x?.player ?? '--'), remainingSec: typeof x?.remaining === 'number' ? x.remaining : 0 }))
-            .filter((p: PenaltySlot) => p.remainingSec > 0));
+          onUpdate(s);
         }
       } catch {}
     })();
@@ -80,29 +84,25 @@ export default function HockeyControlPanel() {
     return () => {
       socket.off("connect", onConnect);
       socket.off("disconnect", onDisconnect);
+      socket.off('scoreboard:update', onUpdate);
       socket.disconnect();
       socketRef.current = null;
     };
   }, []);
 
-  function emitState() {
-    socketRef.current?.emit("scoreboard:update", {
-      homeGoals: homeScore,
-      awayGoals: guestScore,
-      period,
-      timeSeconds,
-      timerRunning: running,
-      teamHome: homeName,
-      teamGuest: guestName,
-    });
-  }
+  
 
   function emitCommand(cmd: string, payload?: unknown) {
     socketRef.current?.emit("scoreboard:cmd", { cmd, payload });
   }
 
   function toggleRun() {
-    setRunning((v) => !v);
+    // Flip locally for responsiveness, then let server authoritative tick drive time
+    setRunning((v) => {
+      const nv = !v; 
+      emitState({ timerRunning: nv });
+      return nv;
+    });
   }
 
   function startConfirm(action: 'load-time' | 'load-interval' | 'period-plus' | 'reset-game') {
@@ -120,7 +120,7 @@ export default function HockeyControlPanel() {
     const secs = 20 * 60;
     setTimeSeconds(secs);
     emitCommand('setClock', { secs });
-    emitState();
+    emitState({ timeSeconds: secs });
     clearConfirm();
   }
 
@@ -129,22 +129,22 @@ export default function HockeyControlPanel() {
     const secs = 15 * 60;
     setTimeSeconds(secs);
     emitCommand('setClock', { secs });
-    emitState();
+    emitState({ timeSeconds: secs });
     clearConfirm();
   }
 
   function doPeriodPlus() {
-    setPeriod(p => { const np = p + 1; emitCommand('setPeriod', { period: np }); queueMicrotask(emitState); return np; });
+    setPeriod(p => { const np = p + 1; emitCommand('setPeriod', { period: np }); queueMicrotask(() => emitState({ period: np })); return np; });
     clearConfirm();
   }
 
   function addGoal(side: TeamSide) {
-    if (side === "home") setHomeScore(v => { const n = v + 1; queueMicrotask(emitState); return n; });
-    else setGuestScore(v => { const n = v + 1; queueMicrotask(emitState); return n; });
+    if (side === "home") setHomeScore(v => { const n = v + 1; queueMicrotask(() => emitState({ homeGoals: n })); return n; });
+    else setGuestScore(v => { const n = v + 1; queueMicrotask(() => emitState({ awayGoals: n })); return n; });
   }
   function subGoal(side: TeamSide) {
-    if (side === "home") setHomeScore(v => { const n = Math.max(0, v - 1); queueMicrotask(emitState); return n; });
-    else setGuestScore(v => { const n = Math.max(0, v - 1); queueMicrotask(emitState); return n; });
+    if (side === "home") setHomeScore(v => { const n = Math.max(0, v - 1); queueMicrotask(() => emitState({ homeGoals: n })); return n; });
+    else setGuestScore(v => { const n = Math.max(0, v - 1); queueMicrotask(() => emitState({ awayGoals: n })); return n; });
   }
 
   function toSeconds(label: string): number {
@@ -230,35 +230,44 @@ export default function HockeyControlPanel() {
     );
   }
 
-  // main timer and penalties tick
-  useEffect(() => {
-    if (running) {
-      timerRef.current = window.setInterval(() => {
-        setTimeSeconds(prev => {
-          const next = Math.max(0, prev - 1);
-          // emit state every tick
-          queueMicrotask(emitState);
-          if (next === 0) {
-            // stop
-            setRunning(false);
-            // siren at end of time
-            emitCommand('siren');
-          }
-          return next;
-        });
-        // tick penalties
-        setHomePenalties(xs => xs.map(p => ({ ...p, remainingSec: Math.max(0, p.remainingSec - 1) })).filter(p => p.remainingSec > 0));
-        setGuestPenalties(xs => xs.map(p => ({ ...p, remainingSec: Math.max(0, p.remainingSec - 1) })).filter(p => p.remainingSec > 0));
-      }, 1000);
-    }
-    return () => { if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; } };
-  }, [running]);
+  // No local ticking: server is authoritative and sends scoreboard:update each second
 
-  // whenever core state changes by UI actions, emit
-  useEffect(() => { emitState(); }, [homeScore, guestScore, period, timeSeconds, running, homeName, guestName]);
+  // emitState helper now supports partials to avoid sending stale fields
+  function emitState(partial?: Partial<{ homeGoals: number; awayGoals: number; period: number; timeSeconds: number; timerRunning: boolean; teamHome: string; teamGuest: string; }>) {
+    const payload = {
+      homeGoals: homeScore,
+      awayGoals: guestScore,
+      period,
+      timeSeconds,
+      timerRunning: running,
+      teamHome: homeName,
+      teamGuest: guestName,
+      ...(partial || {})
+    };
+    socketRef.current?.emit('scoreboard:update', payload);
+  }
 
   function fmt(sec: number) {
     const m = Math.floor(sec / 60); const s = sec % 60; return `${m}:${s < 10 ? '0' + s : s}`;
+  }
+
+  function fmtOpt(sec?: number) {
+    if (typeof sec !== 'number' || Number.isNaN(sec)) return '--:--';
+    return fmt(sec);
+  }
+
+  async function pollObsStatus() {
+    try {
+      const r = await fetch('/api/obs/status');
+      if (r.ok) {
+        const d = await r.json();
+        setObsConnected(Boolean(d?.connected));
+      }
+    } catch {}
+  }
+
+  async function connectOBS() {
+    try { await fetch('/api/obs/connect', { method: 'POST' }); await pollObsStatus(); } catch {}
   }
 
   return (
@@ -309,6 +318,34 @@ export default function HockeyControlPanel() {
       
 
       {/* Main content */}
+        {/* Summary banner */}
+        <div className="mt-4 px-4 w-full">
+          <div className="p-3 rounded-2xl bg-tertiary border border-color text-sm flex flex-wrap items-center gap-4">
+            <div><span className="font-semibold">{homeName}</span> {homeScore}</div>
+            <div className="opacity-60">vs</div>
+            <div><span className="font-semibold">{guestName}</span> {guestScore}</div>
+            <div>PER: <span className="font-semibold">{period}</span></div>
+            <div>TIME: <span className="font-mono tabular-nums">{fmt(timeSeconds)}</span></div>
+            <div>Timer: <span className={running ? 'text-green-500' : 'text-red-500'}>{running ? 'RUN' : 'STOP'}</span></div>
+            <div className="flex items-center gap-2">
+              <span className="opacity-60">PEN HOME:</span>
+              {[0,1].map(i => (
+                <span key={i} className="font-mono">[{homePenalties[i]?.player ?? '--'} {fmtOpt(homePenalties[i]?.remainingSec)}]</span>
+              ))}
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="opacity-60">PEN GUEST:</span>
+              {[0,1].map(i => (
+                <span key={i} className="font-mono">[{guestPenalties[i]?.player ?? '--'} {fmtOpt(guestPenalties[i]?.remainingSec)}]</span>
+              ))}
+            </div>
+            <div className="ml-auto flex items-center gap-2">
+              <span title={obsConnected ? 'OBS connesso' : 'OBS non connesso'} className={`inline-block w-3 h-3 rounded-full ${obsConnected ? 'bg-green-500' : 'bg-red-500'}`}></span>
+              <button onClick={connectOBS} className="px-2 py-1 border border-color rounded-lg text-xs">Connetti OBS</button>
+            </div>
+          </div>
+        </div>
+
         {/* Big centered Start/Stop */}
         <div className="w-full flex items-center justify-center mt-8">
           <button
