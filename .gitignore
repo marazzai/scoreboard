@@ -39,3 +39,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local sqlite databases
+/prisma/*.db
+/prisma/*.db-journal
+
+# VS Code workspace files
+*.code-workspace

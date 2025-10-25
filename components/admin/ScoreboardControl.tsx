@@ -6,6 +6,8 @@ import Toast from '@/components/ui/Toast';
 import Button from '@/components/ui/Button';
 import ConfirmButton from '@/components/ui/ConfirmButton';
 
+type PenSlot = { player: string; remaining: number | null }
+
 type ScoreState = {
   homeGoals: number;
   awayGoals: number;
@@ -15,12 +17,25 @@ type ScoreState = {
   teamHome: string;
   teamGuest: string;
   sirenEveryMinute: boolean;
+  homePenalties: PenSlot[];
+  guestPenalties: PenSlot[];
 };
 
 const socket = io();
 
 export default function ScoreboardControl() {
-  const [state, setState] = useState<ScoreState>({ homeGoals: 0, awayGoals: 0, period: 1, timeSeconds: 20 * 60, timerRunning: false, teamHome: 'HOME', teamGuest: 'GUEST', sirenEveryMinute: false });
+  const [state, setState] = useState<ScoreState>({
+    homeGoals: 0,
+    awayGoals: 0,
+    period: 1,
+    timeSeconds: 20 * 60,
+    timerRunning: false,
+    teamHome: 'HOME',
+    teamGuest: 'GUEST',
+    sirenEveryMinute: false,
+    homePenalties: [ { player: '--', remaining: null }, { player: '--', remaining: null } ],
+    guestPenalties: [ { player: '--', remaining: null }, { player: '--', remaining: null } ],
+  });
   const timerRef = useRef<number | null>(null);
   const [homeName, setHomeName] = useState('HOME');
   const [guestName, setGuestName] = useState('GUEST');
@@ -80,7 +95,18 @@ export default function ScoreboardControl() {
   };
 
   const resetMatch = () => {
-    const next: ScoreState = { homeGoals: 0, awayGoals: 0, period: 1, timeSeconds: 20 * 60, timerRunning: false, teamHome: state.teamHome, teamGuest: state.teamGuest, sirenEveryMinute };
+    const next: ScoreState = {
+      homeGoals: 0,
+      awayGoals: 0,
+      period: 1,
+      timeSeconds: 20 * 60,
+      timerRunning: false,
+      teamHome: state.teamHome,
+      teamGuest: state.teamGuest,
+      sirenEveryMinute,
+      homePenalties: [ { player: '--', remaining: null }, { player: '--', remaining: null } ],
+      guestPenalties: [ { player: '--', remaining: null }, { player: '--', remaining: null } ],
+    };
     setState(next);
     emitState(next);
     emitCommand('reset');
@@ -169,6 +195,13 @@ export default function ScoreboardControl() {
     return () => { socket.off('scoreboard:update', onUpdate); };
   }, []);
 
+  function fmtSec(sec: number | null) {
+    if (sec == null) return '--:--'
+    const m = Math.floor(sec / 60)
+    const s = sec % 60
+    return `${m}:${s < 10 ? '0' + s : s}`
+  }
+
   return (
     <div className="space-y-4 p-6 relative">
       <div title={connected ? 'Online' : 'Offline'} className={`absolute top-2 left-2 w-3 h-3 rounded-full ${connected ? 'bg-green-500' : 'bg-red-500'}`}></div>
@@ -180,6 +213,16 @@ export default function ScoreboardControl() {
         <div>PER: <span className="font-semibold">{state.period}</span></div>
         <div>TIME: <span className="font-mono">{Math.floor(state.timeSeconds/60)}:{String(state.timeSeconds%60).padStart(2, '0')}</span></div>
         <div>Timer: <span className={state.timerRunning ? 'text-green-600' : 'text-red-600'}>{state.timerRunning ? 'RUN' : 'STOP'}</span></div>
+        <div className="flex items-center gap-2">
+          <span className="opacity-60">PEN HOME:</span>
+          <span className="font-mono">[{state.homePenalties?.[0]?.player ?? '--'} {fmtSec(state.homePenalties?.[0]?.remaining ?? null)}]</span>
+          <span className="font-mono">[{state.homePenalties?.[1]?.player ?? '--'} {fmtSec(state.homePenalties?.[1]?.remaining ?? null)}]</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="opacity-60">PEN GUEST:</span>
+          <span className="font-mono">[{state.guestPenalties?.[0]?.player ?? '--'} {fmtSec(state.guestPenalties?.[0]?.remaining ?? null)}]</span>
+          <span className="font-mono">[{state.guestPenalties?.[1]?.player ?? '--'} {fmtSec(state.guestPenalties?.[1]?.remaining ?? null)}]</span>
+        </div>
         <div className="ml-auto flex items-center gap-2">
           <span title={obsConnected ? 'OBS connesso' : 'OBS non connesso'} className={`inline-block w-3 h-3 rounded-full ${obsConnected ? 'bg-green-500' : 'bg-red-500'}`}></span>
           <button onClick={connectOBS} className="px-2 py-1 border rounded text-sm">Connetti OBS</button>
