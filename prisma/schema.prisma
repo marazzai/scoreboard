@@ -165,3 +165,20 @@ model ScheduledEvent {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+
+// Persistent snapshot of the scoreboard state so admin refresh and server restarts
+// can restore the last known scoreboard values.
+model ScoreboardSnapshot {
+  id               Int      @id
+  homeGoals        Int      @default(0)
+  awayGoals        Int      @default(0)
+  period           Int      @default(1)
+  timeSeconds      Int      @default(1200)
+  timerRunning     Boolean  @default(false)
+  teamHome         String   @default("HOME")
+  teamGuest        String   @default("GUEST")
+  sirenEveryMinute Boolean  @default(false)
+  homePenalties    Json
+  guestPenalties   Json
+  updatedAt        DateTime @updatedAt
+}

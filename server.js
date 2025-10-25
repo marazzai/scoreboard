@@ -3,6 +3,9 @@
 const http = require('http')
 const { parse } = require('url')
 const next = require('next')
+const prisma = (function() {
+  try { return require('./src/lib/prisma').default } catch { try { return require('./dist/src/lib/prisma').default } catch { return null } }
+})()
 
 // Decide dev mode: honor NODE_ENV when set, else fall back to dev
 const dev = process.env.NODE_ENV !== 'production'
@@ -28,6 +31,71 @@ async function main() {
 
   if (io) {
     const sb = require('./src/lib/scoreboardState.js')
+    // Load persistent snapshot from DB at startup
+    if (prisma && typeof prisma.scoreboardSnapshot?.findUnique === 'function') {
+      (async () => {
+        try {
+          const snap = await prisma.scoreboardSnapshot.findUnique({ where: { id: 1 } })
+          if (snap) {
+            const initial = {
+              homeGoals: Number(snap.homeGoals ?? 0),
+              awayGoals: Number(snap.awayGoals ?? 0),
+              period: Number(snap.period ?? 1),
+              timeSeconds: Number(snap.timeSeconds ?? 1200),
+              timerRunning: Boolean(snap.timerRunning ?? false),
+              teamHome: String(snap.teamHome ?? 'HOME'),
+              teamGuest: String(snap.teamGuest ?? 'GUEST'),
+              sirenEveryMinute: Boolean(snap.sirenEveryMinute ?? false),
+              homePenalties: Array.isArray(snap.homePenalties) ? snap.homePenalties : [{ player: '--', remaining: null }, { player: '--', remaining: null }],
+              guestPenalties: Array.isArray(snap.guestPenalties) ? snap.guestPenalties : [{ player: '--', remaining: null }, { player: '--', remaining: null }],
+            }
+            sb.setScoreboardState(initial)
+            try { io.emit('scoreboard:update', initial) } catch {}
+          }
+        } catch { /* ignore */ }
+      })()
+    }
+
+    // Debounced persistence to DB
+    let saveTimer = null
+    const scheduleSave = () => {
+      if (!prisma || typeof prisma.scoreboardSnapshot?.upsert !== 'function') return
+      if (saveTimer) return
+      saveTimer = setTimeout(async () => {
+        saveTimer = null
+        try {
+          const cur = sb.getScoreboardState()
+          await prisma.scoreboardSnapshot.upsert({
+            where: { id: 1 },
+            update: {
+              homeGoals: cur.homeGoals,
+              awayGoals: cur.awayGoals,
+              period: cur.period,
+              timeSeconds: cur.timeSeconds,
+              timerRunning: cur.timerRunning,
+              teamHome: cur.teamHome,
+              teamGuest: cur.teamGuest,
+              sirenEveryMinute: !!cur.sirenEveryMinute,
+              homePenalties: cur.homePenalties,
+              guestPenalties: cur.guestPenalties,
+            },
+            create: {
+              id: 1,
+              homeGoals: cur.homeGoals ?? 0,
+              awayGoals: cur.awayGoals ?? 0,
+              period: cur.period ?? 1,
+              timeSeconds: cur.timeSeconds ?? 1200,
+              timerRunning: !!cur.timerRunning,
+              teamHome: cur.teamHome ?? 'HOME',
+              teamGuest: cur.teamGuest ?? 'GUEST',
+              sirenEveryMinute: !!cur.sirenEveryMinute,
+              homePenalties: Array.isArray(cur.homePenalties) ? cur.homePenalties : [{ player: '--', remaining: null }, { player: '--', remaining: null }],
+              guestPenalties: Array.isArray(cur.guestPenalties) ? cur.guestPenalties : [{ player: '--', remaining: null }, { player: '--', remaining: null }],
+            }
+          })
+        } catch { /* ignore */ }
+      }, 1000)
+    }
     // Server-authoritative clock tick to keep all admins/displays in sync
     let lastMinuteSirenAtSec = null
     setInterval(() => {
@@ -54,6 +122,7 @@ async function main() {
         }
         sb.setScoreboardState(next)
         io.emit('scoreboard:update', next)
+  scheduleSave()
 
         // Emit minute siren at mm:00 when enabled, without spamming
         if (next.sirenEveryMinute === true && nextSec > 0 && nextSec % 60 === 0) {
@@ -137,6 +206,7 @@ async function main() {
         // Update server-side snapshot
         try {
           if (payload && typeof payload === 'object') sb.setScoreboardState(payload)
+          scheduleSave()
         } catch {}
       })
     })
