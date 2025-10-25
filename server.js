@@ -160,6 +160,26 @@ async function main() {
     } catch {
       console.log(`> Ready on http://localhost:${port} (dev=${dev})`)
     }
+
+    // Ensure OBS stays connected across restarts: poll status and auto-connect
+    try {
+      const baseUrl = process.env.SELF_BASE_URL || `http://localhost:${port}`
+      const pollObs = async () => {
+        try {
+          const r = await fetch(`${baseUrl}/api/obs/status`)
+          const d = await r.json().catch(() => ({}))
+          const connected = Boolean(d && d.connected)
+          if (!connected) {
+            try {
+              await fetch(`${baseUrl}/api/obs/connect`, { method: 'POST' })
+            } catch {}
+          }
+        } catch {}
+      }
+      // initial attempt soon after boot, then periodic
+      setTimeout(pollObs, 1500)
+      setInterval(pollObs, 5000)
+    } catch {}
   })
 }
 
