@@ -29,14 +29,39 @@ async function main() {
   if (io) {
     const sb = require('./src/lib/scoreboardState.js')
     // Server-authoritative clock tick to keep all admins/displays in sync
+    let lastMinuteSirenAtSec = null
     setInterval(() => {
       try {
         const cur = sb.getScoreboardState()
         if (!cur.timerRunning) return
         const nextSec = Math.max(0, Number(cur.timeSeconds || 0) - 1)
-        const next = { ...cur, timeSeconds: nextSec, timerRunning: nextSec === 0 ? false : cur.timerRunning }
+        // Decrement penalties when clock is running
+        const decSlots = (slots) => (Array.isArray(slots) ? slots.map((sl) => {
+          const player = (sl && typeof sl.player !== 'undefined') ? String(sl.player) : '--'
+          const rem = (sl && typeof sl.remaining === 'number') ? sl.remaining : null
+          if (rem == null) return { player, remaining: null }
+          const nextR = Math.max(0, rem - 1)
+          if (nextR === 0) return { player: '--', remaining: null }
+          return { player, remaining: nextR }
+        }) : [{ player: '--', remaining: null }, { player: '--', remaining: null }])
+
+        const next = {
+          ...cur,
+          timeSeconds: nextSec,
+          timerRunning: nextSec === 0 ? false : cur.timerRunning,
+          homePenalties: decSlots(cur.homePenalties),
+          guestPenalties: decSlots(cur.guestPenalties)
+        }
         sb.setScoreboardState(next)
         io.emit('scoreboard:update', next)
+
+        // Emit minute siren at mm:00 when enabled, without spamming
+        if (next.sirenEveryMinute === true && nextSec > 0 && nextSec % 60 === 0) {
+          if (lastMinuteSirenAtSec !== nextSec) {
+            lastMinuteSirenAtSec = nextSec
+            try { io.emit('scoreboard:cmd', { cmd: 'siren', payload: {} }) } catch {}
+          }
+        }
       } catch {}
     }, 1000)
     io.on('connection', (socket) => {

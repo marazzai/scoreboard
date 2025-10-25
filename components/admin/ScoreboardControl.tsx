@@ -28,6 +28,7 @@ export default function ScoreboardControl() {
   const [connected, setConnected] = useState<boolean>(socket.connected);
 
   const [toast, setToast] = useState<{ msg: string; type?: 'info'|'success'|'error' } | null>(null);
+  const [obsConnected, setObsConnected] = useState<boolean>(false);
 
   useEffect(() => {
     // socket lifecycle
@@ -118,6 +119,31 @@ export default function ScoreboardControl() {
   }
 
   // show toast UI
+  // OBS status polling and connect action
+  useEffect(() => {
+    let alive = true
+    const poll = () => fetch('/api/obs/status').then(r => r.json()).then((d) => {
+      if (!alive) return
+      setObsConnected(Boolean(d?.connected))
+    }).catch(() => { if (alive) setObsConnected(false) })
+    poll()
+    const id = setInterval(poll, 5000)
+    return () => { alive = false; clearInterval(id) }
+  }, [])
+
+  async function connectOBS() {
+    try {
+      const r = await fetch('/api/obs/connect', { method: 'POST' })
+      const d = await r.json()
+      setObsConnected(Boolean(d?.connected))
+      if (!d?.connected) setToast({ msg: 'Connessione OBS fallita', type: 'error' })
+      else setToast({ msg: 'Connesso a OBS', type: 'success' })
+    } catch {
+      setObsConnected(false)
+      setToast({ msg: 'Errore di connessione OBS', type: 'error' })
+    }
+  }
+
 
   // Fetch current state on mount for persistence across reloads
   useEffect(() => {
@@ -154,6 +180,10 @@ export default function ScoreboardControl() {
         <div>PER: <span className="font-semibold">{state.period}</span></div>
         <div>TIME: <span className="font-mono">{Math.floor(state.timeSeconds/60)}:{String(state.timeSeconds%60).padStart(2, '0')}</span></div>
         <div>Timer: <span className={state.timerRunning ? 'text-green-600' : 'text-red-600'}>{state.timerRunning ? 'RUN' : 'STOP'}</span></div>
+        <div className="ml-auto flex items-center gap-2">
+          <span title={obsConnected ? 'OBS connesso' : 'OBS non connesso'} className={`inline-block w-3 h-3 rounded-full ${obsConnected ? 'bg-green-500' : 'bg-red-500'}`}></span>
+          <button onClick={connectOBS} className="px-2 py-1 border rounded text-sm">Connetti OBS</button>
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-3">
